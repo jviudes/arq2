@@ -54,14 +54,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu]
-        python: ['3.8', '3.9', '3.10', '3.11', '3.12']
-        redis: ['5']
+        python: ['3.10', '3.11', '3.12', '3.13']
+        redis: ['7']
         include:
-          - python: '3.11'
-            redis: '6'
-            os: 'ubuntu'
-          - python: '3.11'
-            redis: '7'
+          - python: '3.12'
+            redis: '8'
             os: 'ubuntu'
 
     env:

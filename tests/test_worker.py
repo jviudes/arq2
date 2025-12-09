@@ -35,7 +35,7 @@ async def fails(ctx):
     raise TypeError('my type error')
 
 
-def test_no_jobs(test_redis_settings: RedisSettings, arq_redis: ArqRedis, loop, mocker):
+def test_no_jobs(test_redis_settings: RedisSettings, loop, mocker):
     class Settings:
         functions = [func(foobar, name='foobar')]
         burst = True
@@ -43,7 +43,13 @@ def test_no_jobs(test_redis_settings: RedisSettings, arq_redis: ArqRedis, loop, 
         queue_read_limit = 10
         redis_settings = test_redis_settings
 
-    loop.run_until_complete(arq_redis.enqueue_job('foobar'))
+    async def setup():
+        redis = ArqRedis(host=test_redis_settings.host, port=test_redis_settings.port)
+        await redis.flushall()
+        await redis.enqueue_job('foobar')
+        await redis.aclose()
+
+    loop.run_until_complete(setup())
     mocker.patch('asyncio.get_event_loop', lambda: loop)
     worker = run_worker(Settings)
     assert worker.jobs_complete == 1
@@ -421,7 +427,7 @@ async def test_job_old(arq_redis: ArqRedis, worker, caplog):
     assert worker.jobs_retried == 0
 
     log = re.sub(r'(\d+).\d\ds', r'\1.XXs', '\n'.join(r.message for r in caplog.records))
-    assert log.endswith('  0.XXs → testing:foobar() delayed=2.XXs\n' '  0.XXs ← testing:foobar ● 42')
+    assert log.endswith('  0.XXs → testing:foobar() delayed=2.XXs\n  0.XXs ← testing:foobar ● 42')
 
 
 async def test_retry_repr():
@@ -818,7 +824,7 @@ async def test_max_bursts_dont_get(arq_redis: ArqRedis, worker):
     assert len(worker.tasks) == 0
 
 
-async def test_non_burst(arq_redis: ArqRedis, worker, caplog, loop):
+async def test_non_burst(arq_redis: ArqRedis, worker, caplog):
     async def foo(ctx, v):
         return v + 1
 
@@ -826,6 +832,7 @@ async def test_non_burst(arq_redis: ArqRedis, worker, caplog, loop):
     await arq_redis.enqueue_job('foo', 1, _job_id='testing')
     worker: Worker = worker(functions=[func(foo, name='foo')])
     worker.burst = False
+    loop = asyncio.get_running_loop()
     t = loop.create_task(worker.main())
     await asyncio.sleep(0.1)
     t.cancel()
@@ -854,7 +861,7 @@ async def test_multi_exec(arq_redis: ArqRedis, worker, caplog):
     # assert 'WatchVariableError' not in caplog.text
 
 
-async def test_abort_job(arq_redis: ArqRedis, worker, caplog, loop):
+async def test_abort_job(arq_redis: ArqRedis, worker, caplog):
     async def longfunc(ctx):
         await asyncio.sleep(3600)
 
@@ -887,7 +894,7 @@ async def test_abort_job_which_is_not_in_queue(arq_redis: ArqRedis):
     assert await job.abort() is False
 
 
-async def test_abort_job_before(arq_redis: ArqRedis, worker, caplog, loop):
+async def test_abort_job_before(arq_redis: ArqRedis, worker, caplog):
     async def longfunc(ctx):
         await asyncio.sleep(3600)
 
@@ -913,7 +920,7 @@ async def test_abort_job_before(arq_redis: ArqRedis, worker, caplog, loop):
     assert worker.tasks == {}
 
 
-async def test_abort_deferred_job_before(arq_redis: ArqRedis, worker, caplog, loop):
+async def test_abort_deferred_job_before(arq_redis: ArqRedis, worker, caplog):
     async def longfunc(ctx):
         await asyncio.sleep(3600)
 
@@ -943,7 +950,7 @@ async def test_abort_deferred_job_before(arq_redis: ArqRedis, worker, caplog, lo
     assert worker.tasks == {}
 
 
-async def test_not_abort_job(arq_redis: ArqRedis, worker, caplog, loop):
+async def test_not_abort_job(arq_redis: ArqRedis, worker, caplog):
     async def shortfunc(ctx):
         await asyncio.sleep(0.2)
 
@@ -1062,6 +1069,7 @@ async def test_worker_timezone_defaults_to_system_timezone(worker):
     assert worker.timezone == datetime.now().astimezone().tzinfo
 
 
+@pytest.mark.skip(reason='_disconnect_raise was removed in redis-py 6+')
 @pytest.mark.parametrize(
     'exception_thrown',
     [
@@ -1100,6 +1108,7 @@ async def test_worker_retry(mocker, worker_retry, exception_thrown):
         p.stop()
 
 
+@pytest.mark.skip(reason='_disconnect_raise was removed in redis-py 6+')
 @pytest.mark.parametrize(
     'exception_thrown',
     [

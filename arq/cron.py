@@ -2,7 +2,6 @@ import asyncio
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, Union
 
 from .typing import WEEKDAYS, OptionType, SecondsTimedelta, WeekdayOptionType, WorkerCoroutine
 from .utils import import_string, to_seconds
@@ -48,7 +47,7 @@ def next_cron(
         dt = next_dt
 
 
-def _get_next_dt(dt_: datetime, options: Options) -> Optional[datetime]:  # noqa: C901
+def _get_next_dt(dt_: datetime, options: Options) -> datetime | None:  # noqa: C901
     for field, v in dataclasses.asdict(options).items():
         if v is None:
             continue
@@ -58,7 +57,7 @@ def _get_next_dt(dt_: datetime, options: Options) -> Optional[datetime]:  # noqa
             next_v = getattr(dt_, field)
         if isinstance(v, int):
             mismatch = next_v != v
-        elif isinstance(v, (set, list, tuple)):
+        elif isinstance(v, set | list | tuple):
             mismatch = next_v not in v
         else:
             raise RuntimeError(v)
@@ -102,12 +101,12 @@ class CronJob:
     microsecond: int
     run_at_startup: bool
     unique: bool
-    job_id: Optional[str]
-    timeout_s: Optional[float]
-    keep_result_s: Optional[float]
-    keep_result_forever: Optional[bool]
-    max_tries: Optional[int]
-    next_run: Optional[datetime] = None
+    job_id: str | None
+    timeout_s: float | None
+    keep_result_s: float | None
+    keep_result_forever: bool | None
+    max_tries: int | None
+    next_run: datetime | None = None
 
     def calculate_next(self, prev_run: datetime) -> None:
         self.next_run = next_cron(
@@ -126,9 +125,9 @@ class CronJob:
 
 
 def cron(
-    coroutine: Union[str, WorkerCoroutine],
+    coroutine: str | WorkerCoroutine,
     *,
-    name: Optional[str] = None,
+    name: str | None = None,
     month: OptionType = None,
     day: OptionType = None,
     weekday: WeekdayOptionType = None,
@@ -138,11 +137,11 @@ def cron(
     microsecond: int = 123_456,
     run_at_startup: bool = False,
     unique: bool = True,
-    job_id: Optional[str] = None,
-    timeout: Optional[SecondsTimedelta] = None,
-    keep_result: Optional[float] = 0,
-    keep_result_forever: Optional[bool] = False,
-    max_tries: Optional[int] = 1,
+    job_id: str | None = None,
+    timeout: SecondsTimedelta | None = None,
+    keep_result: float | None = 0,
+    keep_result_forever: bool | None = False,
+    max_tries: int | None = 1,
 ) -> CronJob:
     """
     Create a cron job, eg. it should be executed at specific times.

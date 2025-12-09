@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import os
+from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from time import time
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional, Sequence, overload
+from typing import TYPE_CHECKING, Any, Optional, overload
 
 from .constants import timezone_env_vars
 
@@ -69,7 +70,7 @@ def to_ms(td: 'SecondsTimedelta') -> int:
     pass
 
 
-def to_ms(td: Optional['SecondsTimedelta']) -> Optional[int]:
+def to_ms(td: Optional['SecondsTimedelta']) -> int | None:
     if td is None:
         return td
     elif isinstance(td, timedelta):
@@ -87,7 +88,7 @@ def to_seconds(td: 'SecondsTimedelta') -> float:
     pass
 
 
-def to_seconds(td: Optional['SecondsTimedelta']) -> Optional[float]:
+def to_seconds(td: Optional['SecondsTimedelta']) -> float | None:
     if td is None:
         return td
     elif isinstance(td, timedelta):
@@ -121,7 +122,7 @@ def truncate(s: str, length: int = DEFAULT_CURTAIL) -> str:
     return s
 
 
-def args_to_string(args: Sequence[Any], kwargs: Dict[str, Any]) -> str:
+def args_to_string(args: Sequence[Any], kwargs: dict[str, Any]) -> str:
     arguments = ''
     if args:
         arguments = ', '.join(map(repr, args))
