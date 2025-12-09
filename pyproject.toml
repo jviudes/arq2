@@ -6,7 +6,7 @@ build-backend = 'hatchling.build'
 path = 'arq/version.py'
 
 [project]
-name = 'arq'
+name = 'arq2'
 description = 'Job queues in python with asyncio and redis'
 authors = [{name = 'Samuel Colvin', email = 's@muelcolvin.com'}]
 license = { text = 'MIT' }
@@ -48,11 +48,10 @@ dynamic = ['version']
 arq = 'arq.cli:cli'
 
 [project.urls]
-Homepage = 'https://github.com/samuelcolvin/arq'
+Homepage = 'https://github.com/jviudes/arq2'
 Documentation = 'https://arq-docs.helpmanual.io'
-Funding = 'https://github.com/sponsors/samuelcolvin'
-Source = 'https://github.com/samuelcolvin/arq'
-Changelog = 'https://github.com/samuelcolvin/arq/releases'
+Source = 'https://github.com/jviudes/arq2'
+Changelog = 'https://github.com/jviudes/arq2/releases'
 
 [tool.pytest.ini_options]
 testpaths = 'tests'
