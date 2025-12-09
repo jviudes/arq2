@@ -3,12 +3,13 @@ import contextlib
 import inspect
 import logging
 import signal
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from signal import Signals
 from time import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from redis.exceptions import ResponseError, WatchError
 
@@ -51,20 +52,20 @@ no_result = object()
 class Function:
     name: str
     coroutine: 'WorkerCoroutine'
-    timeout_s: Optional[float]
-    keep_result_s: Optional[float]
-    keep_result_forever: Optional[bool]
-    max_tries: Optional[int]
+    timeout_s: float | None
+    keep_result_s: float | None
+    keep_result_forever: bool | None
+    max_tries: int | None
 
 
 def func(
     coroutine: Union[str, Function, 'WorkerCoroutine'],
     *,
-    name: Optional[str] = None,
+    name: str | None = None,
     keep_result: Optional['SecondsTimedelta'] = None,
     timeout: Optional['SecondsTimedelta'] = None,
-    keep_result_forever: Optional[bool] = None,
-    max_tries: Optional[int] = None,
+    keep_result_forever: bool | None = None,
+    max_tries: int | None = None,
 ) -> Function:
     """
     Wrapper for a job function which lets you configure more settings.
@@ -81,7 +82,7 @@ def func(
 
     if isinstance(coroutine, str):
         name = name or coroutine
-        coroutine_: 'WorkerCoroutine' = import_string(coroutine)
+        coroutine_: WorkerCoroutine = import_string(coroutine)
     else:
         coroutine_ = coroutine
 
@@ -101,7 +102,7 @@ class Retry(RuntimeError):
     """
 
     def __init__(self, defer: Optional['SecondsTimedelta'] = None):
-        self.defer_score: Optional[int] = to_ms(defer)
+        self.defer_score: int | None = to_ms(defer)
 
     def __repr__(self) -> str:
         return f'<Retry defer {(self.defer_score or 0) / 1000:0.2f}s>'
@@ -118,7 +119,7 @@ class JobExecutionFailed(RuntimeError):
 
 
 class FailedJobs(RuntimeError):
-    def __init__(self, count: int, job_results: List[JobResult]):
+    def __init__(self, count: int, job_results: list[JobResult]):
         self.count = count
         self.job_results = job_results
 
@@ -187,10 +188,10 @@ class Worker:
         self,
         functions: Sequence[Union[Function, 'WorkerCoroutine']] = (),
         *,
-        queue_name: Optional[str] = default_queue_name,
-        cron_jobs: Optional[Sequence[CronJob]] = None,
-        redis_settings: Optional[RedisSettings] = None,
-        redis_pool: Optional[ArqRedis] = None,
+        queue_name: str | None = default_queue_name,
+        cron_jobs: Sequence[CronJob] | None = None,
+        redis_settings: RedisSettings | None = None,
+        redis_pool: ArqRedis | None = None,
         burst: bool = False,
         on_startup: Optional['StartupShutdown'] = None,
         on_shutdown: Optional['StartupShutdown'] = None,
@@ -204,28 +205,28 @@ class Worker:
         keep_result: 'SecondsTimedelta' = 3600,
         keep_result_forever: bool = False,
         poll_delay: 'SecondsTimedelta' = 0.5,
-        queue_read_limit: Optional[int] = None,
+        queue_read_limit: int | None = None,
         max_tries: int = 5,
         health_check_interval: 'SecondsTimedelta' = 3600,
-        health_check_key: Optional[str] = None,
-        ctx: Optional[Dict[Any, Any]] = None,
+        health_check_key: str | None = None,
+        ctx: dict[Any, Any] | None = None,
         retry_jobs: bool = True,
         allow_abort_jobs: bool = False,
         max_burst_jobs: int = -1,
-        job_serializer: Optional[Serializer] = None,
-        job_deserializer: Optional[Deserializer] = None,
+        job_serializer: Serializer | None = None,
+        job_deserializer: Deserializer | None = None,
         expires_extra_ms: int = expires_extra_ms,
-        timezone: Optional[timezone] = None,
+        timezone: timezone | None = None,
         log_results: bool = True,
     ):
-        self.functions: Dict[str, Union[Function, CronJob]] = {f.name: f for f in map(func, functions)}
+        self.functions: dict[str, Function | CronJob] = {f.name: f for f in map(func, functions)}
         if queue_name is None:
             if redis_pool is not None:
                 queue_name = redis_pool.default_queue_name
             else:
                 raise ValueError('If queue_name is absent, redis_pool must be present.')
         self.queue_name = queue_name
-        self.cron_jobs: List[CronJob] = []
+        self.cron_jobs: list[CronJob] = []
         if cron_jobs is not None:
             if not all(isinstance(cj, CronJob) for cj in cron_jobs):
                 raise RuntimeError('cron_jobs, must be instances of CronJob')
@@ -258,14 +259,14 @@ class Worker:
             self.health_check_key = health_check_key
         self._pool = redis_pool
         if self._pool is None:
-            self.redis_settings: Optional[RedisSettings] = redis_settings or RedisSettings()
+            self.redis_settings: RedisSettings | None = redis_settings or RedisSettings()
         else:
             self.redis_settings = None
         # self.tasks holds references to run_job coroutines currently running
-        self.tasks: Dict[str, asyncio.Task[Any]] = {}
+        self.tasks: dict[str, asyncio.Task[Any]] = {}
         # self.job_tasks holds references the actual jobs running
-        self.job_tasks: Dict[str, asyncio.Task[Any]] = {}
-        self.main_task: Optional[asyncio.Task[None]] = None
+        self.job_tasks: dict[str, asyncio.Task[Any]] = {}
+        self.main_task: asyncio.Task[None] | None = None
         self.loop = asyncio.get_event_loop()
         self.ctx = ctx or {}
         max_timeout = max(f.timeout_s or self.job_timeout_s for f in self.functions.values())
@@ -274,7 +275,7 @@ class Worker:
         self.jobs_retried = 0
         self.jobs_failed = 0
         self._last_health_check: float = 0
-        self._last_health_check_log: Optional[str] = None
+        self._last_health_check_log: str | None = None
         self._handle_signals = handle_signals
         self._job_completion_wait = job_completion_wait
         if self._handle_signals:
@@ -284,12 +285,12 @@ class Worker:
             else:
                 self._add_signal_handler(signal.SIGINT, self.handle_sig)
                 self._add_signal_handler(signal.SIGTERM, self.handle_sig)
-        self.on_stop: Optional[Callable[[Signals], None]] = None
+        self.on_stop: Callable[[Signals], None] | None = None
         # whether or not to retry jobs on Retry and CancelledError
         self.retry_jobs = retry_jobs
         self.allow_abort_jobs = allow_abort_jobs
         self.allow_pick_jobs: bool = True
-        self.aborting_tasks: Set[str] = set()
+        self.aborting_tasks: set[str] = set()
         self.max_burst_jobs = max_burst_jobs
         self.job_serializer = job_serializer
         self.job_deserializer = job_deserializer
@@ -319,7 +320,7 @@ class Worker:
         self.main_task = self.loop.create_task(self.main())
         await self.main_task
 
-    async def run_check(self, retry_jobs: Optional[bool] = None, max_burst_jobs: Optional[int] = None) -> int:
+    async def run_check(self, retry_jobs: bool | None = None, max_burst_jobs: int | None = None) -> int:
         """
         Run :func:`arq.worker.Worker.async_run`, check for failed jobs and raise :class:`arq.worker.FailedJobs`
         if any jobs have failed.
@@ -409,7 +410,7 @@ class Worker:
             pipe.zremrangebyscore(abort_jobs_ss, min=timestamp_ms() + abort_job_max_age, max=float('inf'))
             abort_job_ids, _ = await pipe.execute()
 
-        aborted: Set[str] = set()
+        aborted: set[str] = set()
         for job_id_bytes in abort_job_ids:
             job_id = job_id_bytes.decode()
             try:
@@ -428,7 +429,7 @@ class Worker:
         self.job_counter = self.job_counter - 1
         self.sem.release()
 
-    async def start_jobs(self, job_ids: List[bytes]) -> None:
+    async def start_jobs(self, job_ids: list[bytes]) -> None:
         """
         For each job id, get the job definition, check it's not running and start it in a task
         """
@@ -484,8 +485,8 @@ class Worker:
                 abort_job = False
 
         function_name, enqueue_time_ms = '<unknown>', 0
-        args: Tuple[Any, ...] = ()
-        kwargs: Dict[Any, Any] = {}
+        args: tuple[Any, ...] = ()
+        kwargs: dict[Any, Any] = {}
 
         async def job_failed(exc: BaseException) -> None:
             self.jobs_failed += 1
@@ -524,7 +525,7 @@ class Worker:
             return await job_failed(asyncio.CancelledError())
 
         try:
-            function: Union[Function, CronJob] = self.functions[function_name]
+            function: Function | CronJob = self.functions[function_name]
         except KeyError:
             logger.warning('job %s, function %r not found', job_id, function_name)
             return await job_failed(JobExecutionFailed(f'function {function_name!r} not found'))
@@ -532,7 +533,7 @@ class Worker:
         if hasattr(function, 'next_run'):
             # cron_job
             ref = function_name
-            keep_in_progress: Optional[float] = keep_cronjob_progress
+            keep_in_progress: float | None = keep_cronjob_progress
         else:
             ref = f'{job_id}:{function_name}'
             keep_in_progress = None
@@ -567,7 +568,7 @@ class Worker:
         exc_extra = None
         finish = False
         timeout_s = self.job_timeout_s if function.timeout_s is None else function.timeout_s
-        incr_score: Optional[int] = None
+        incr_score: int | None = None
         job_ctx = {
             'job_id': job_id,
             'job_try': job_try,
@@ -617,7 +618,7 @@ class Worker:
                 finish = True
                 self.aborting_tasks.remove(job_id)
                 self.jobs_failed += 1
-            elif self.retry_jobs and isinstance(e, (asyncio.CancelledError, RetryJob)):
+            elif self.retry_jobs and isinstance(e, asyncio.CancelledError | RetryJob):
                 logger.info('%6.2fs ↻ %s cancelled, will be run again', t, ref)
                 self.jobs_retried += 1
             else:
@@ -678,11 +679,11 @@ class Worker:
         self,
         job_id: str,
         finish: bool,
-        result_data: Optional[bytes],
-        result_timeout_s: Optional[float],
+        result_data: bytes | None,
+        result_timeout_s: float | None,
         keep_result_forever: bool,
-        incr_score: Optional[int],
-        keep_in_progress: Optional[float],
+        incr_score: int | None,
+        keep_in_progress: float | None,
     ) -> None:
         async with self.pool.pipeline(transaction=True) as tr:
             delete_keys = []
@@ -705,7 +706,7 @@ class Worker:
                 tr.delete(*delete_keys)
             await tr.execute()
 
-    async def finish_failed_job(self, job_id: str, result_data: Optional[bytes]) -> None:
+    async def finish_failed_job(self, job_id: str, result_data: bytes | None) -> None:
         async with self.pool.pipeline(transaction=True) as tr:
             tr.delete(
                 retry_key_prefix + job_id,
@@ -748,7 +749,7 @@ class Worker:
             # delay * num_windows (by default 0.5 * 2 = 1 second).
             if cron_job.next_run < this_hb_cutoff:
                 if cron_job.job_id:
-                    job_id: Optional[str] = cron_job.job_id
+                    job_id: str | None = cron_job.job_id
                 else:
                     job_id = f'{cron_job.name}:{to_unix_ms(cron_job.next_run)}' if cron_job.unique else None
                 job_futures.add(
@@ -879,7 +880,7 @@ class Worker:
         )
 
 
-def get_kwargs(settings_cls: 'WorkerSettingsType') -> Dict[str, NameError]:
+def get_kwargs(settings_cls: 'WorkerSettingsType') -> dict[str, NameError]:
     worker_args = set(inspect.signature(Worker).parameters.keys())
     d = settings_cls if isinstance(settings_cls, dict) else settings_cls.__dict__
     return {k: v for k, v in d.items() if k in worker_args}
@@ -896,7 +897,7 @@ def run_worker(settings_cls: 'WorkerSettingsType', **kwargs: Any) -> Worker:
 
 
 async def async_check_health(
-    redis_settings: Optional[RedisSettings], health_check_key: Optional[str] = None, queue_name: Optional[str] = None
+    redis_settings: RedisSettings | None, health_check_key: str | None = None, queue_name: str | None = None
 ) -> int:
     redis_settings = redis_settings or RedisSettings()
     redis: ArqRedis = await create_pool(redis_settings)
@@ -920,7 +921,7 @@ def check_health(settings_cls: 'WorkerSettingsType') -> int:
     :return: 0 if successful, 1 if not
     """
     cls_kwargs = get_kwargs(settings_cls)
-    redis_settings = cast(Optional[RedisSettings], cls_kwargs.get('redis_settings'))
-    health_check_key = cast(Optional[str], cls_kwargs.get('health_check_key'))
-    queue_name = cast(Optional[str], cls_kwargs.get('queue_name'))
+    redis_settings = cast(RedisSettings | None, cls_kwargs.get('redis_settings'))
+    health_check_key = cast(str | None, cls_kwargs.get('health_check_key'))
+    queue_name = cast(str | None, cls_kwargs.get('queue_name'))
     return asyncio.run(async_check_health(redis_settings, health_check_key, queue_name))

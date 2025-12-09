@@ -2,10 +2,11 @@ import asyncio
 import logging
 import pickle
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 from redis.asyncio import Redis
 
@@ -14,8 +15,8 @@ from .utils import ms_to_datetime, poll, timestamp_ms
 
 logger = logging.getLogger('arq.jobs')
 
-Serializer = Callable[[Dict[str, Any]], bytes]
-Deserializer = Callable[[bytes], Dict[str, Any]]
+Serializer = Callable[[dict[str, Any]], bytes]
+Deserializer = Callable[[bytes], dict[str, Any]]
 
 
 class ResultNotFound(RuntimeError):
@@ -42,12 +43,12 @@ class JobStatus(str, Enum):
 @dataclass
 class JobDef:
     function: str
-    args: Tuple[Any, ...]
-    kwargs: Dict[str, Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
     job_try: int
     enqueue_time: datetime
-    score: Optional[int]
-    job_id: Optional[str]
+    score: int | None
+    job_id: str | None
 
     def __post_init__(self) -> None:
         if isinstance(self.score, float):
@@ -75,7 +76,7 @@ class Job:
         job_id: str,
         redis: 'Redis[bytes]',
         _queue_name: str = default_queue_name,
-        _deserializer: Optional[Deserializer] = None,
+        _deserializer: Deserializer | None = None,
     ):
         self.job_id = job_id
         self._redis = redis
@@ -83,7 +84,7 @@ class Job:
         self._deserializer = _deserializer
 
     async def result(
-        self, timeout: Optional[float] = None, *, poll_delay: float = 0.5, pole_delay: Optional[float] = None
+        self, timeout: float | None = None, *, poll_delay: float = 0.5, pole_delay: float | None = None
     ) -> Any:
         """
         Get the result of the job or, if the job raised an exception, reraise it.
@@ -111,7 +112,7 @@ class Job:
                 info = deserialize_result(v, deserializer=self._deserializer)
                 if info.success:
                     return info.result
-                elif isinstance(info.result, (Exception, asyncio.CancelledError)):
+                elif isinstance(info.result, Exception | asyncio.CancelledError):
                     raise info.result
                 else:
                     raise SerializationError(info.result)
@@ -124,11 +125,11 @@ class Job:
             if timeout is not None and delay > timeout:
                 raise asyncio.TimeoutError()
 
-    async def info(self) -> Optional[JobDef]:
+    async def info(self) -> JobDef | None:
         """
         All information on a job, including its result if it's available, does not wait for the result.
         """
-        info: Optional[JobDef] = await self.result_info()
+        info: JobDef | None = await self.result_info()
         if not info:
             v = await self._redis.get(job_key_prefix + self.job_id)
             if v:
@@ -138,7 +139,7 @@ class Job:
             info.score = None if s is None else int(s)
         return info
 
-    async def result_info(self) -> Optional[JobResult]:
+    async def result_info(self) -> JobResult | None:
         """
         Information about the job result if available, does not wait for the result. Does not raise an exception
         even if the job raised one.
@@ -168,7 +169,7 @@ class Job:
         else:
             return JobStatus.not_found
 
-    async def abort(self, *, timeout: Optional[float] = None, poll_delay: float = 0.5) -> bool:
+    async def abort(self, *, timeout: float | None = None, poll_delay: float = 0.5) -> bool:
         """
         Abort the job.
 
@@ -210,12 +211,12 @@ class DeserializationError(SerializationError):
 
 def serialize_job(
     function_name: str,
-    args: Tuple[Any, ...],
-    kwargs: Dict[str, Any],
-    job_try: Optional[int],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    job_try: int | None,
     enqueue_time_ms: int,
     *,
-    serializer: Optional[Serializer] = None,
+    serializer: Serializer | None = None,
 ) -> bytes:
     data = {'t': job_try, 'f': function_name, 'a': args, 'k': kwargs, 'et': enqueue_time_ms}
     if serializer is None:
@@ -228,8 +229,8 @@ def serialize_job(
 
 def serialize_result(
     function: str,
-    args: Tuple[Any, ...],
-    kwargs: Dict[str, Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
     job_try: int,
     enqueue_time_ms: int,
     success: bool,
@@ -240,8 +241,8 @@ def serialize_result(
     queue_name: str,
     job_id: str,
     *,
-    serializer: Optional[Serializer] = None,
-) -> Optional[bytes]:
+    serializer: Serializer | None = None,
+) -> bytes | None:
     data = {
         't': job_try,
         'f': function,
@@ -271,7 +272,7 @@ def serialize_result(
     return None
 
 
-def deserialize_job(r: bytes, *, deserializer: Optional[Deserializer] = None) -> JobDef:
+def deserialize_job(r: bytes, *, deserializer: Deserializer | None = None) -> JobDef:
     if deserializer is None:
         deserializer = pickle.loads
     try:
@@ -290,8 +291,8 @@ def deserialize_job(r: bytes, *, deserializer: Optional[Deserializer] = None) ->
 
 
 def deserialize_job_raw(
-    r: bytes, *, deserializer: Optional[Deserializer] = None
-) -> Tuple[str, Tuple[Any, ...], Dict[str, Any], int, int]:
+    r: bytes, *, deserializer: Deserializer | None = None
+) -> tuple[str, tuple[Any, ...], dict[str, Any], int, int]:
     if deserializer is None:
         deserializer = pickle.loads
     try:
@@ -301,7 +302,7 @@ def deserialize_job_raw(
         raise DeserializationError('unable to deserialize job') from e
 
 
-def deserialize_result(r: bytes, *, deserializer: Optional[Deserializer] = None) -> JobResult:
+def deserialize_result(r: bytes, *, deserializer: Deserializer | None = None) -> JobResult:
     if deserializer is None:
         deserializer = pickle.loads
     try:

@@ -1,10 +1,11 @@
 import asyncio
 import functools
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from operator import attrgetter
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
@@ -28,30 +29,30 @@ class RedisSettings:
     Used by :func:`arq.connections.create_pool` and :class:`arq.worker.Worker`.
     """
 
-    host: Union[str, List[Tuple[str, int]]] = 'localhost'
+    host: str | list[tuple[str, int]] = 'localhost'
     port: int = 6379
-    unix_socket_path: Optional[str] = None
+    unix_socket_path: str | None = None
     database: int = 0
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
     ssl: bool = False
-    ssl_keyfile: Optional[str] = None
-    ssl_certfile: Optional[str] = None
+    ssl_keyfile: str | None = None
+    ssl_certfile: str | None = None
     ssl_cert_reqs: str = 'required'
-    ssl_ca_certs: Optional[str] = None
-    ssl_ca_data: Optional[str] = None
+    ssl_ca_certs: str | None = None
+    ssl_ca_data: str | None = None
     ssl_check_hostname: bool = False
     conn_timeout: int = 1
     conn_retries: int = 5
     conn_retry_delay: int = 1
-    max_connections: Optional[int] = None
+    max_connections: int | None = None
 
     sentinel: bool = False
     sentinel_master: str = 'mymaster'
 
     retry_on_timeout: bool = False
-    retry_on_error: Optional[List[Exception]] = None
-    retry: Optional[Retry] = None
+    retry_on_error: list[Exception] | None = None
+    retry: Retry | None = None
 
     @classmethod
     def from_dsn(cls, dsn: str) -> 'RedisSettings':
@@ -101,9 +102,9 @@ class ArqRedis(BaseRedis):
 
     def __init__(
         self,
-        pool_or_conn: Optional[ConnectionPool] = None,
-        job_serializer: Optional[Serializer] = None,
-        job_deserializer: Optional[Deserializer] = None,
+        pool_or_conn: ConnectionPool | None = None,
+        job_serializer: Serializer | None = None,
+        job_deserializer: Deserializer | None = None,
         default_queue_name: str = default_queue_name,
         expires_extra_ms: int = expires_extra_ms,
         **kwargs: Any,
@@ -120,14 +121,14 @@ class ArqRedis(BaseRedis):
         self,
         function: str,
         *args: Any,
-        _job_id: Optional[str] = None,
-        _queue_name: Optional[str] = None,
-        _defer_until: Optional[datetime] = None,
-        _defer_by: Union[None, int, float, timedelta] = None,
-        _expires: Union[None, int, float, timedelta] = None,
-        _job_try: Optional[int] = None,
+        _job_id: str | None = None,
+        _queue_name: str | None = None,
+        _defer_until: datetime | None = None,
+        _defer_by: None | int | float | timedelta = None,
+        _expires: None | int | float | timedelta = None,
+        _job_try: int | None = None,
         **kwargs: Any,
-    ) -> Optional[Job]:
+    ) -> Job | None:
         """
         Enqueue a job.
 
@@ -189,7 +190,7 @@ class ArqRedis(BaseRedis):
         r.job_id = job_id
         return r
 
-    async def all_job_results(self) -> List[JobResult]:
+    async def all_job_results(self) -> list[JobResult]:
         """
         Get results for all jobs in redis.
         """
@@ -207,7 +208,7 @@ class ArqRedis(BaseRedis):
         jd.job_id = job_id.decode()
         return jd
 
-    async def queued_jobs(self, *, queue_name: Optional[str] = None) -> List[JobDef]:
+    async def queued_jobs(self, *, queue_name: str | None = None) -> list[JobDef]:
         """
         Get information about queued, mostly useful when testing.
         """
@@ -218,11 +219,11 @@ class ArqRedis(BaseRedis):
 
 
 async def create_pool(
-    settings_: Optional[RedisSettings] = None,
+    settings_: RedisSettings | None = None,
     *,
     retry: int = 0,
-    job_serializer: Optional[Serializer] = None,
-    job_deserializer: Optional[Deserializer] = None,
+    job_serializer: Serializer | None = None,
+    job_deserializer: Deserializer | None = None,
     default_queue_name: str = default_queue_name,
     expires_extra_ms: int = expires_extra_ms,
 ) -> ArqRedis:
@@ -312,8 +313,5 @@ async def log_redis_info(redis: 'Redis[bytes]', log_func: Callable[[str], Any]) 
     clients_connected = info_clients.get('connected_clients', '?')
 
     log_func(
-        f'redis_version={redis_version} '
-        f'mem_usage={mem_usage} '
-        f'clients_connected={clients_connected} '
-        f'db_keys={key_count}'
+        f'redis_version={redis_version} mem_usage={mem_usage} clients_connected={clients_connected} db_keys={key_count}'
     )
