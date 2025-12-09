@@ -5,6 +5,9 @@ build-backend = 'hatchling.build'
 [tool.hatch.version]
 path = 'arq/version.py'
 
+[tool.hatch.build.targets.wheel]
+packages = ['arq']
+
 [project]
 name = 'arq2'
 description = 'Job queues in python with asyncio and redis'
