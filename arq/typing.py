@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -38,8 +40,8 @@ class StartupShutdown(Protocol):
 
 
 class WorkerSettingsBase(Protocol):
-    functions: Sequence[WorkerCoroutine | 'Function']
-    cron_jobs: Sequence['CronJob'] | None = None
+    functions: Sequence[WorkerCoroutine | Function]
+    cron_jobs: Sequence[CronJob] | None = None
     on_startup: StartupShutdown | None = None
     on_shutdown: StartupShutdown | None = None
     # and many more...
